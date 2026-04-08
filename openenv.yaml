@@ -1,0 +1,69 @@
+name: Smart Factory Optimization
+version: 1.0.0
+description: A Reinforcement Learning environment for optimizing machine scheduling, energy consumption, and maintenance in a smart factory.
+
+observation_space:
+  type: object
+  properties:
+    machines:
+      type: array
+      items:
+        type: object
+        properties:
+          id: { type: string }
+          status: { type: string, enum: [idle, busy, broken, maintenance, intermittent_failure] }
+          health: { type: number, minimum: 0, maximum: 1 }
+          energy_usage: { type: number, minimum: 0 }
+          current_job_id: { type: [string, "null"] }
+          remaining_time: { type: integer, minimum: 0 }
+    job_queue:
+      type: array
+      items:
+        type: object
+        properties:
+          id: { type: string }
+          processing_time: { type: integer, minimum: 1 }
+          priority: { type: integer, minimum: 1, maximum: 3 }
+          arrival_time: { type: integer, minimum: 0 }
+          waiting_time: { type: integer, minimum: 0 }
+    energy_budget: { type: number, minimum: 0 }
+    current_energy_usage: { type: number, minimum: 0 }
+    time_step: { type: integer, minimum: 0 }
+    total_reward: { type: number }
+    jobs_completed: { type: integer, minimum: 0 }
+    max_steps: { type: integer, minimum: 1 }
+    done: { type: boolean }
+
+action_space:
+  type: object
+  properties:
+    type: { type: string, enum: [assign, delay, maintenance, do_nothing] }
+    job_id: { type: string }
+    machine_id: { type: string }
+  required: [type]
+
+reward_function:
+  components:
+    job_completion:
+      description: Reward for completing a job, scaled by priority.
+      formula: "+10.0 * job.priority"
+    waiting_penalty:
+      description: Penalty for each step a job waits in the queue.
+      formula: "-0.1 * job.priority"
+    failure_penalty:
+      description: Large penalty for a machine breaking down.
+      formula: "-20.0"
+    energy_penalty:
+      description: Penalty for exceeding the energy budget.
+      formula: "-2.0 * (current_energy - energy_budget)"
+    maintenance_bonus:
+      description: Reward for completing maintenance on a machine.
+      formula: "+5.0"
+    invalid_action_penalty:
+      description: Penalty for attempting an invalid action (e.g., assigning to a busy machine).
+      formula: "-2.0"
+
+grading_criteria:
+  throughput: 40%
+  machine_health: 30%
+  energy_efficiency: 30%

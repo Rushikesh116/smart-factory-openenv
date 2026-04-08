@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smart-factory-openenv"
+version = "0.1.0"
+description = "Smart Factory RL Environment for OpenEnv Hackathon"
+authors = [
+    { name = "Rushikesh Yadav" }
+]
+dependencies = [
+    "openenv-core",
+    "pydantic",
+    "stable-baselines3",
+    "sb3-contrib",
+    "gymnasium",
+    "numpy",
+    "openai"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[project.scripts]
+server = "server.app:main"

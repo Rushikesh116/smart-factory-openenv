@@ -1,0 +1,10 @@
+{
+  "name": "smart-factory-rl-backend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "FastAPI backend for Smart Factory RL system",
+  "scripts": {
+    "start": "python -m server.app",
+    "dev": "python -m server.app"
+  }
+}

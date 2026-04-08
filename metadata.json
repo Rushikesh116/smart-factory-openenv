@@ -1,0 +1,5 @@
+{
+  "name": "Smart Factory RL Environment",
+  "description": "A production-grade RL environment for optimizing smart factory operations, including machine scheduling, job allocation, and energy management.",
+  "requestFramePermissions": []
+}
