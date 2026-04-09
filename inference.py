@@ -21,15 +21,15 @@ from stable_baselines3 import PPO
 
 
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
-API_KEY = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
+HF_TOKEN = os.getenv("HF_TOKEN")
 
 client = None
-if API_KEY:
+if HF_TOKEN:
     client = OpenAI(
         base_url=API_BASE_URL,
-        api_key=API_KEY
+        api_key=HF_TOKEN
     )
-
+    
 MODEL_NAME = os.getenv("MODEL_NAME", "smart-factory-rl")
 TASK_ID = os.getenv("TASK_ID", "easy")
 MODEL_PATH = os.getenv("MODEL_PATH", os.path.join("models", "latest.zip"))
