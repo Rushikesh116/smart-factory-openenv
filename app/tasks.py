@@ -19,21 +19,30 @@ def safe_score(value):
 
 
 def energy_efficiency_grader(state: Any) -> float:
-    components = calculate_component_scores(state)
-    score = components.get("energy_score", 0.5)
-    return safe_score(score)
+    score = float(calculate_component_scores(state)["energy_score"])
+    if score <= 0.0:
+        return 0.01
+    if score >= 1.0:
+        return 0.99
+    return score
 
 
 def throughput_grader(state: Any) -> float:
-    components = calculate_component_scores(state)
-    score = components.get("throughput_score", 0.5)
-    return safe_score(score)
+    score = float(calculate_component_scores(state)["throughput_score"])
+    if score <= 0.0:
+        return 0.01
+    if score >= 1.0:
+        return 0.99
+    return score
 
 
 def delay_grader(state: Any) -> float:
-    components = calculate_component_scores(state)
-    score = components.get("delay_score", 0.5)
-    return safe_score(score)
+    score = float(calculate_component_scores(state)["delay_score"])
+    if score <= 0.0:
+        return 0.01
+    if score >= 1.0:
+        return 0.99
+    return score
 
 
 GRADER_REGISTRY = {
@@ -142,7 +151,7 @@ def serialize_tasks() -> List[Dict[str, Any]]:
             "id": task["id"],
             "name": task["name"],
             "description": task["objective"],
-            "grader": task["canonical_id"],
+            "objective": task["objective"],
         }
         for task in TASK_LIST
     ]
