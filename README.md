@@ -135,7 +135,7 @@ python -m rl.evaluate
 python inference.py
 ```
 
-### Run Demo
+### Run Demo(Optional)
 
 ```bash
 python app.py
