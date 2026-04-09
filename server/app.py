@@ -217,8 +217,8 @@ def state() -> Dict[str, Any]:
 
 
 @app.get("/tasks")
-def get_tasks() -> list[Dict[str, Any]]:
-    return serialize_tasks()
+def get_tasks() -> Dict[str, Any]:
+    return {"tasks": serialize_tasks()}
 
 
 @app.get("/grader")

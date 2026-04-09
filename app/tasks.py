@@ -140,11 +140,9 @@ def serialize_tasks() -> List[Dict[str, Any]]:
     return [
         {
             "id": task["id"],
-            "canonical_id": task["canonical_id"],
             "name": task["name"],
-            "objective": task["objective"],
-            "config": dict(task["config"]),
-            "grader": task["grader"],
+            "description": task["objective"],
+            "grader": task["canonical_id"],
         }
         for task in TASK_LIST
     ]
