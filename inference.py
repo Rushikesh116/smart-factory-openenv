@@ -4,6 +4,7 @@ import os
 from typing import Any
 
 import numpy as np
+from openai import OpenAI
 
 from rl.baselines import HeuristicBaselinePolicy
 from rl.gym_env import SmartFactoryEnv
@@ -19,9 +20,36 @@ except ImportError:
 from stable_baselines3 import PPO
 
 
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
+API_KEY = os.getenv("API_KEY") or os.getenv("OPENAI_API_KEY")
+
+client = None
+if API_KEY:
+    client = OpenAI(
+        base_url=API_BASE_URL,
+        api_key=API_KEY
+    )
+
 MODEL_NAME = os.getenv("MODEL_NAME", "smart-factory-rl")
 TASK_ID = os.getenv("TASK_ID", "easy")
 MODEL_PATH = os.getenv("MODEL_PATH", os.path.join("models", "latest.zip"))
+
+
+def llm_policy(obs):
+    if client is None:
+        return 0
+    try:
+        response = client.chat.completions.create(
+            model=os.getenv("MODEL_NAME", "gpt-4.1-mini"),
+            messages=[
+                {"role": "user", "content": f"Return ONLY a single integer action (0-98) for this observation: {obs}"}
+            ],
+            max_tokens=5
+        )
+        text = response.choices[0].message.content.strip()
+        return int(text)
+    except:
+        return 0
 
 
 def load_policy(model_path: str) -> tuple[Any | None, str]:
@@ -40,7 +68,13 @@ def load_policy(model_path: str) -> tuple[Any | None, str]:
         return None, "heuristic"
 
 
-def choose_action(env: SmartFactoryEnv, model: Any | None, policy_kind: str, fallback: HeuristicBaselinePolicy, obs: Any) -> tuple[int, str]:
+def choose_action(
+    env: SmartFactoryEnv,
+    model: Any | None,
+    policy_kind: str,
+    fallback: HeuristicBaselinePolicy,
+    obs: Any,
+) -> tuple[int, str]:
     if model is None:
         action = int(fallback.act(env, obs))
         return action, "heuristic"
@@ -75,7 +109,15 @@ def main() -> None:
     max_steps = max(10, int(env.config.get("max_steps", 50)))
 
     while not done and steps < max_steps:
-        action, action_label = choose_action(env, model, policy_kind, fallback_policy, obs)
+        llm_action = llm_policy(obs)
+
+        if model is not None:
+            action, action_label = choose_action(env, model, policy_kind, fallback_policy, obs)
+        else:
+            action = llm_action
+            action_label = "llm"
+
+        action = max(0, min(98, int(action)))
         obs, reward, terminated, truncated, info = env.step(action)
         done = bool(terminated or truncated)
 
@@ -93,4 +135,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"[END] success=false steps=0 rewards= error={str(e)}")

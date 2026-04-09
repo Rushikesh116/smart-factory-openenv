@@ -2,6 +2,9 @@ name: Smart Factory Optimization
 version: 1.0.0
 description: A Reinforcement Learning environment for optimizing machine scheduling, energy consumption, and maintenance in a smart factory.
 
+tags:
+  - openenv
+
 observation_space:
   type: object
   properties:
@@ -66,3 +69,11 @@ grading_criteria:
   energy_efficiency: 40%
   low_latency: 20%
   score_bounds: "(0.01, 0.99)"
+
+tasks:
+  - id: easy
+    description: Optimize energy efficiency in a small factory
+  - id: medium
+    description: Maximize throughput under moderate load
+  - id: hard
+    description: Minimize delay in high-load failure-prone environment
