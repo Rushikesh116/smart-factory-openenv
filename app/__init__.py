@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import numpy as np
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from rl.gym_env import SmartFactoryEnv
 from .tasks import TASK_LIST, get_task, serialize_tasks
+
+if TYPE_CHECKING:
+    from rl.gym_env import SmartFactoryEnv
 
 try:
     import gradio as gr
@@ -36,7 +38,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_env: Optional[SmartFactoryEnv] = None
+_env: Optional["SmartFactoryEnv"] = None
 _current_task_id = TASK_LIST[0]["id"]
 _current_observation: Optional[np.ndarray] = None
 
@@ -49,8 +51,9 @@ def _observation_to_json(observation: Any) -> Any:
     return observation
 
 
-def _ensure_env(task_id: Optional[str] = None) -> SmartFactoryEnv:
+def _ensure_env(task_id: Optional[str] = None) -> "SmartFactoryEnv":
     global _env, _current_task_id
+    from rl.gym_env import SmartFactoryEnv
 
     requested_task = task_id or _current_task_id
     task = get_task(requested_task)
