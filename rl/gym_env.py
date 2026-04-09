@@ -8,7 +8,7 @@ from gymnasium import spaces
 
 from app.reward import calculate_component_scores
 from app.simulator import SmartFactorySimulator
-from app.tasks import TASKS, TASK_LIST
+from app.tasks import TASKS, TASK_LIST, grade_task
 
 DEBUG = False
 
@@ -26,6 +26,7 @@ class SmartFactoryEnv(gym.Env):
         self.render_mode = render_mode
         self.config = self._get_task_config(task_id)
         self.sim = SmartFactorySimulator(self.config)
+        self.simulator = self.sim
 
         # 0: do nothing
         # 1-8: maintenance on machine i
@@ -229,6 +230,7 @@ class SmartFactoryEnv(gym.Env):
             print(f"[DEBUG] action={action} decoded={decoded_action} valid={is_valid_action}")
 
         next_state, simulator_reward, done, sim_info = self.sim.step(decoded_action)
+        self.simulator.state = next_state
         terminated = bool(done and len(next_state.get("job_queue", [])) == 0)
         truncated = bool(done and not terminated)
 
@@ -243,7 +245,26 @@ class SmartFactoryEnv(gym.Env):
         busy_machines = int(sum(1 for status in machine_states if status in {"busy", "working"}))
         broken_machines = int(sum(1 for status in machine_states if status in {"broken", "intermittent_failure"}))
         queue_length = int(next_state.get("queue_length", len(next_state.get("job_queue", []))))
-        reward, reward_breakdown = self._shape_reward(next_state, float(simulator_reward), invalid_penalty)
+        score = grade_task(self.task_id, next_state)
+        try:
+            score = float(score)
+            if not np.isfinite(score):
+                score = 0.5
+        except:
+            score = 0.5
+
+        score = max(0.01, min(0.99, score))
+        reward = score
+        components = calculate_component_scores(next_state)
+        reward_breakdown = {
+            "energy_score": components.get("energy_score", 0.5),
+            "throughput_score": components.get("throughput_score", 0.5),
+            "delay_score": components.get("delay_score", 0.5),
+            "graded_score": score,
+            "simulator_reward": float(simulator_reward),
+            "invalid_action_penalty": invalid_penalty,
+            "total_reward": reward,
+        }
 
         info = {
             "jobs_completed": jobs_completed,

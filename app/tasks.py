@@ -2,25 +2,38 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from app.reward import calculate_component_scores
+from app.reward import state_to_dict
+
+
+def safe_score(value):
+    if value is None or not isinstance(value, (int, float)):
+        return 0.5
+    return max(0.01, min(0.99, float(value)))
 
 
 def energy_efficiency_grader(state: Any) -> float:
-    score = calculate_component_scores(state)["energy_score"]
-    final_score = max(0.01, min(0.99, score))
-    return final_score
+    state_data = state_to_dict(state)
+    energy_usage = float(state_data.get("current_energy_usage", 0.0))
+    energy_budget = max(float(state_data.get("energy_budget", 1.0)), 1.0)
+    score = 1.0 - (energy_usage / max(energy_budget * 1.15, 1.0))
+    return safe_score(score)
 
 
 def throughput_grader(state: Any) -> float:
-    score = calculate_component_scores(state)["throughput_score"]
-    final_score = max(0.01, min(0.99, score))
-    return final_score
+    state_data = state_to_dict(state)
+    jobs_completed = float(state_data.get("jobs_completed", 0.0))
+    queue_length = float(state_data.get("queue_length", len(state_data.get("job_queue", []))))
+    total_jobs = max(jobs_completed + queue_length, 1.0)
+    score = jobs_completed / total_jobs
+    return safe_score(score)
 
 
 def delay_grader(state: Any) -> float:
-    score = calculate_component_scores(state)["delay_score"]
-    final_score = max(0.01, min(0.99, score))
-    return final_score
+    state_data = state_to_dict(state)
+    delay = float(state_data.get("delay", state_data.get("avg_waiting_time", 0.0)))
+    max_steps = max(float(state_data.get("max_steps", 1.0)), 1.0)
+    score = 1.0 - (delay / max(max_steps * 0.3, 5.0))
+    return safe_score(score)
 
 
 TASK_LIST: List[Dict[str, Any]] = [
