@@ -225,9 +225,26 @@ def get_tasks() -> list[Dict[str, Any]]:
 def get_grader() -> Dict[str, Any]:
     try:
         state_data = _current_state()
-        return {"task_id": current_task_id, "score": grade_task(current_task_id, state_data)}
+        raw_score = float(grade_task(current_task_id, state_data))
+
+        # STRICT VALIDATOR SAFE CLAMP
+        if raw_score <= 0.0:
+            score = 0.01
+        elif raw_score >= 1.0:
+            score = 0.99
+        else:
+            score = raw_score
+
+        return {
+            "task_id": current_task_id,
+            "score": score
+        }
+
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to grade environment: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to grade environment: {exc}"
+        ) from exc
 
 
 @app.post("/step")
