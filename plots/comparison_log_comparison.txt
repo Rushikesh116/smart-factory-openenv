@@ -1,0 +1,3 @@
+ppo: reward=54.340, energy=8.147, throughput=0.211, delay=3.119, breakdown_risk=0.131
+baseline: reward=12.059, energy=23.218, throughput=0.757, delay=11.449, breakdown_risk=0.291
+random: reward=29.357, energy=9.794, throughput=0.272, delay=32.667, breakdown_risk=0.235

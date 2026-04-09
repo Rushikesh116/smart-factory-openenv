@@ -3,50 +3,60 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { State, MachineStatus } from "./models.ts";
+import { State } from "./models.ts";
+
+function clampScore(score: number): number {
+  return Math.max(0.01, Math.min(0.99, score));
+}
+
+function queueLength(state: State): number {
+  return state.queue_length ?? state.job_queue.length;
+}
+
+export function energyEfficiencyGrader(state: State): number {
+  const energyBudget = Math.max(state.energy_budget || 1, 1);
+  const energyUsage = Math.max(state.current_energy_usage || 0, 0);
+  const score = 1 - (energyUsage / Math.max(energyBudget * 1.25, 1));
+  return clampScore(score);
+}
+
+export function throughputGrader(state: State): number {
+  const totalJobs = Math.max(state.jobs_completed + queueLength(state), 1);
+  const score = state.jobs_completed / totalJobs;
+  return clampScore(score);
+}
+
+export function delayGrader(state: State): number {
+  const queue = state.job_queue || [];
+  const delay = state.delay ?? (
+    queue.length > 0
+      ? queue.reduce((sum, job) => sum + (job.waiting_time || 0), 0) / queue.length
+      : 0
+  );
+  const realisticBound = Math.max((state.max_steps || 1) * 0.5, 5);
+  const score = 1 - (delay / realisticBound);
+  return clampScore(score);
+}
 
 export class SmartFactoryGrader {
   public static grade(state: State): number {
-    if (!state || state.time_step === 0) return 0.0;
-
-    // 1. Throughput Score (0.0 to 1.0)
-    // Normalized by max possible jobs (estimated)
-    const totalJobs = state.jobs_completed + state.job_queue.length;
-    const throughputScore = totalJobs > 0 ? state.jobs_completed / totalJobs : 1.0;
-
-    // 2. Machine Health Score (0.0 to 1.0)
-    const avgHealth = state.machines.length > 0 
-      ? state.machines.reduce((acc, m) => acc + m.health, 0) / state.machines.length 
-      : 1.0;
-
-    // 3. Energy Efficiency Score (0.0 to 1.0)
-    // Penalty scales with how much the budget was exceeded
-    let energyScore = 1.0;
-    if (state.current_energy_usage > state.energy_budget) {
-      const overageRatio = (state.current_energy_usage - state.energy_budget) / state.energy_budget;
-      energyScore = Math.max(0, 1.0 - overageRatio);
-    }
-
-    // 4. Uptime Score (0.0 to 1.0)
-    const brokenCount = state.machines.filter(m => m.status === MachineStatus.BROKEN).length;
-    const uptimeScore = state.machines.length > 0 
-      ? 1.0 - (brokenCount / state.machines.length) 
-      : 1.0;
-
-    // Weighted final score
-    const finalScore = (throughputScore * 0.4) + (avgHealth * 0.2) + (energyScore * 0.2) + (uptimeScore * 0.2);
-    
-    return Math.min(1.0, Math.max(0.0, finalScore));
+    const energyScore = energyEfficiencyGrader(state);
+    const throughputScore = throughputGrader(state);
+    const delayScore = delayGrader(state);
+    const score = (energyScore * 0.35) + (throughputScore * 0.4) + (delayScore * 0.25);
+    return clampScore(score);
   }
 
   public static getDetailedMetrics(state: State) {
     return {
-      throughput: state.jobs_completed / (state.time_step || 1),
-      completion_rate: state.jobs_completed / (state.jobs_completed + state.job_queue.length || 1),
-      avg_machine_health: state.machines.reduce((acc, m) => acc + m.health, 0) / (state.machines.length || 1),
-      energy_efficiency: state.current_energy_usage <= state.energy_budget ? 1.0 : 0.0,
-      broken_machines: state.machines.filter(m => m.status === MachineStatus.BROKEN).length,
-      total_reward: state.total_reward
+      energy_efficiency: energyEfficiencyGrader(state),
+      throughput_score: throughputGrader(state),
+      delay_score: delayGrader(state),
+      completion_rate: state.jobs_completed / Math.max(state.jobs_completed + queueLength(state), 1),
+      throughput: state.throughput ?? (state.jobs_completed / Math.max(state.time_step || 1, 1)),
+      delay: state.delay ?? 0,
+      breakdown_risk: clampScore(state.breakdown_risk ?? 0.01),
+      total_reward: state.total_reward,
     };
   }
 }

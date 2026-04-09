@@ -8,8 +8,10 @@ import { Task } from "./models.ts";
 export const TASKS: Task[] = [
   {
     id: "easy",
-    name: "Stable System",
-    description: "Few machines, stable system, no failures. Focus on basic scheduling.",
+    name: "Energy Efficiency",
+    description: "Optimize energy use under a tight budget while keeping the line productive.",
+    objective: "energy_efficiency",
+    grader: "energyEfficiencyGrader",
     config: {
       num_machines: 2,
       initial_jobs: 10,
@@ -20,8 +22,10 @@ export const TASKS: Task[] = [
   },
   {
     id: "medium",
-    name: "Energy Constraints",
-    description: "More machines and jobs with tight energy constraints. Balance throughput and power.",
+    name: "Throughput Optimization",
+    description: "Increase completed jobs per episode while preserving machine reliability.",
+    objective: "throughput",
+    grader: "throughputGrader",
     config: {
       num_machines: 4,
       initial_jobs: 20,
@@ -32,8 +36,10 @@ export const TASKS: Task[] = [
   },
   {
     id: "hard",
-    name: "Dynamic Factory",
-    description: "High machine failure rate, dynamic job arrivals, and priority jobs. Manage health and delays.",
+    name: "Low Latency Scheduling",
+    description: "Minimize queueing delay in a failure-prone, high-load factory configuration.",
+    objective: "low_latency",
+    grader: "delayGrader",
     config: {
       num_machines: 8,
       initial_jobs: 30,

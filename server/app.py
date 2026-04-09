@@ -1,34 +1,37 @@
 import os
 import sys
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from typing import Any, Dict, Optional
 
+import numpy as np
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-import uvicorn
-from app.tasks import TASKS
-from rl.gym_env import SmartFactoryEnv as GymSmartFactoryEnv
-import numpy as np
-from typing import Dict, Any, Optional
 
-# Try to import both PPO types
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.tasks import TASK_LIST, get_task, grade_task, serialize_tasks
+from rl.gym_env import SmartFactoryEnv as GymSmartFactoryEnv
+
 try:
     from sb3_contrib import MaskablePPO
+
     MASKABLE_PPO_AVAILABLE = True
 except ImportError:
+    MaskablePPO = None
     MASKABLE_PPO_AVAILABLE = False
 
 from stable_baselines3 import PPO
 
-# Global variables
+
 app = FastAPI(title="Smart Factory RL API")
 model = None
 env: Optional[GymSmartFactoryEnv] = None
 current_observation: Optional[np.ndarray] = None
+current_task_id = TASK_LIST[0]["id"]
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -37,248 +40,245 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def load_model():
-    """Load the trained model (try MaskablePPO first, then PPO)"""
+
+class ResetRequest(BaseModel):
+    task_id: Optional[str] = None
+
+
+class ActionRequest(BaseModel):
+    action: Dict[str, Any]
+
+
+class AutoRunRequest(BaseModel):
+    max_steps: int = 50
+
+
+def load_model() -> None:
     global model
     model_path = "models/latest.zip"
+    if not os.path.exists(model_path):
+        model = None
+        return
+
+    if MASKABLE_PPO_AVAILABLE:
+        try:
+            model = MaskablePPO.load(model_path)
+            return
+        except Exception:
+            pass
 
     try:
-        if MASKABLE_PPO_AVAILABLE:
-            try:
-                model = MaskablePPO.load(model_path)
-                print(f"✅ MaskablePPO model loaded from {model_path}")
-                return
-            except Exception as e:
-                print(f"MaskablePPO failed: {e}")
-
-        # Fallback to regular PPO
         model = PPO.load(model_path)
-        print(f"✅ PPO model loaded from {model_path}")
-
-    except Exception as e:
-        print(f"❌ Failed to load model from {model_path}: {e}")
-        print("💡 Make sure you have trained a model first with: python -m rl.train")
-        print("💡 If using MaskablePPO, ensure sb3-contrib version compatibility")
+    except Exception:
         model = None
 
-def initialize_environment():
-    """Initialize the Smart Factory gym environment"""
-    global env
-    try:
-        # Use gym environment for proper observation formatting
-        env = GymSmartFactoryEnv(task_id="easy")
-        print("✅ Gym environment initialized")
-    except Exception as e:
-        print(f"❌ Failed to initialize gym environment: {e}")
-        env = None
+
+def _ensure_env(task_id: Optional[str] = None) -> GymSmartFactoryEnv:
+    global env, current_task_id
+
+    requested_task = task_id or current_task_id
+    task = get_task(requested_task)
+    current_task_id = task["id"]
+    if env is None or env.task_id != current_task_id:
+        env = GymSmartFactoryEnv(task_id=current_task_id)
+    return env
+
+
+def _current_state() -> Dict[str, Any]:
+    active_env = _ensure_env()
+    return active_env.sim.get_state()
+
+
+def _encode_action(action: Dict[str, Any], state: Dict[str, Any]) -> int:
+    if isinstance(action.get("action"), int):
+        return int(action["action"])
+
+    machine = action.get("machine")
+    task = action.get("task")
+    if isinstance(machine, int) and isinstance(task, int):
+        if machine < 0 or task < 0:
+            return 0
+        return 19 + (task * 8) + machine
+
+    action_type = str(action.get("type", "do_nothing"))
+    machines = state.get("machines", [])
+    queue = state.get("job_queue", [])
+
+    if action_type == "do_nothing":
+        return 0
+
+    if action_type == "maintenance":
+        machine_id = action.get("machine_id")
+        for idx, machine_state in enumerate(machines[:8]):
+            if machine_state.get("id") == machine_id:
+                return 1 + idx
+        return 0
+
+    if action_type == "delay":
+        job_id = action.get("job_id")
+        for idx, job_state in enumerate(queue[:10]):
+            if job_state.get("id") == job_id:
+                return 9 + idx
+        return 0
+
+    if action_type == "assign":
+        job_id = action.get("job_id")
+        machine_id = action.get("machine_id")
+        job_idx = next((idx for idx, job_state in enumerate(queue[:10]) if job_state.get("id") == job_id), None)
+        machine_idx = next(
+            (idx for idx, machine_state in enumerate(machines[:8]) if machine_state.get("id") == machine_id),
+            None,
+        )
+        if job_idx is None or machine_idx is None:
+            return 0
+        return 19 + (job_idx * 8) + machine_idx
+
+    return 0
+
+
+def _step_with_action(action_value: int) -> Dict[str, Any]:
+    global current_observation
+
+    active_env = _ensure_env()
+    if current_observation is None:
+        current_observation, _ = active_env.reset()
+
+    obs, reward, terminated, truncated, info = active_env.step(action_value)
+    current_observation = obs
+    return {
+        "action": int(action_value),
+        "observation": obs.tolist() if hasattr(obs, "tolist") else obs,
+        "reward": float(reward),
+        "done": bool(terminated or truncated),
+        "info": info,
+    }
+
 
 @app.on_event("startup")
-async def startup_event():
-    """Load model and initialize environment on startup"""
+async def startup_event() -> None:
     load_model()
-    initialize_environment()
+    _ensure_env(current_task_id)
+
 
 @app.get("/", response_class=HTMLResponse)
-def root():
-    """Simple HTML status page"""
+def root() -> str:
     return """
-    <h1>🏭 Smart Factory RL System</h1>
-    <p>Status: <b>Running ✅</b></p>
+    <h1>Smart Factory RL System</h1>
+    <p>Status: <b>Running</b></p>
     <p>Available endpoints:</p>
     <ul>
         <li><a href="/docs">Swagger UI</a></li>
         <li>POST /reset</li>
         <li>POST /step</li>
         <li>POST /predict</li>
+        <li>GET /tasks</li>
+        <li>GET /grader</li>
     </ul>
     """
 
+
+@app.get("/health")
+def health() -> Dict[str, Any]:
+    return {"ok": True, "task_id": current_task_id, "model_loaded": model is not None}
+
+
 @app.post("/reset")
-def reset():
-    """Reset the environment and return initial observation"""
+def reset(request: Optional[ResetRequest] = None) -> Dict[str, Any]:
     global current_observation
 
-    if not env:
-        raise HTTPException(status_code=500, detail="Environment not initialized")
-
+    active_env = _ensure_env(request.task_id if request else None)
     try:
-        obs, info = env.reset()
-        current_observation = obs
-        print(f"DEBUG FASTAPI RESET: obs type={type(obs)}, shape={obs.shape if hasattr(obs, 'shape') else 'no shape'}")
-        return {"observation": obs.tolist() if hasattr(obs, 'tolist') else obs}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to reset environment: {str(e)}")
-
-class ActionRequest(BaseModel):
-    action: Dict[str, Any]
-
-@app.post("/step")
-def step(request: ActionRequest):
-    """Take a step in the environment"""
-    global current_observation
-
-    if not env:
-        raise HTTPException(status_code=500, detail="Environment not initialized")
-
-    try:
-        # Convert action dict to the format expected by gym env
-        # The gym env expects discrete actions, so we need to encode the machine/task back to discrete
-        machine_idx = request.action.get("machine", 0)
-        task_idx = request.action.get("task", 0)
-
-        # For now, assume the action dict contains the discrete action directly
-        # This is a simplification - in practice you'd need proper encoding
-        if isinstance(request.action.get("action"), int):
-            action = request.action["action"]
-        else:
-            # Default to action 0 (do nothing)
-            action = 0
-
-        obs, reward, done, truncated, info = env.step(action)
+        obs, info = active_env.reset()
         current_observation = obs
         return {
-            "observation": obs.tolist() if hasattr(obs, 'tolist') else obs,
-            "reward": float(reward),
-            "done": bool(done or truncated),
-            "info": info
+            "task_id": current_task_id,
+            "observation": obs.tolist() if hasattr(obs, "tolist") else obs,
+            "info": info,
+            "state": active_env.sim.get_state(),
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to execute step: {str(e)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to reset environment: {exc}") from exc
+
+
+@app.get("/state")
+def state() -> Dict[str, Any]:
+    try:
+        return {"task_id": current_task_id, "state": _current_state()}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to read state: {exc}") from exc
+
+
+@app.get("/tasks")
+def get_tasks() -> list[Dict[str, Any]]:
+    return serialize_tasks()
+
+
+@app.get("/grader")
+def get_grader() -> Dict[str, Any]:
+    try:
+        state_data = _current_state()
+        return {"task_id": current_task_id, "score": grade_task(current_task_id, state_data)}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to grade environment: {exc}") from exc
+
+
+@app.post("/step")
+def step(request: ActionRequest) -> Dict[str, Any]:
+    try:
+        state_data = _current_state()
+        action_value = _encode_action(request.action, state_data)
+        result = _step_with_action(action_value)
+        result["state"] = _current_state()
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to execute step: {exc}") from exc
+
 
 @app.post("/predict")
-def predict():
-    """Use trained model to predict and execute next action"""
+def predict() -> Dict[str, Any]:
     global current_observation
 
-    if not model:
+    if model is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
 
-    if not env:
-        raise HTTPException(status_code=500, detail="Environment not initialized")
-
+    active_env = _ensure_env()
     if current_observation is None:
-        raise HTTPException(status_code=400, detail="Environment not reset. Call /reset first")
+        current_observation, _ = active_env.reset()
 
     try:
-        print(f"DEBUG FASTAPI PREDICT: current_observation type={type(current_observation)}, shape={current_observation.shape if hasattr(current_observation, 'shape') else 'no shape'}")
-        # Get action from model
         action, _ = model.predict(current_observation, deterministic=True)
-
-        # Action is already a discrete value from the model's action space
         action_value = int(action[0]) if isinstance(action, np.ndarray) else int(action)
+        result = _step_with_action(action_value)
+        result["state"] = _current_state()
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to predict and step: {exc}") from exc
 
-        # Execute step with discrete action
-        obs, reward, done, truncated, info = env.step(action_value)
-        current_observation = obs
-
-        return {
-            "action": action_value,
-            "observation": obs.tolist() if hasattr(obs, 'tolist') else obs,
-            "reward": float(reward),
-            "done": bool(done or truncated),
-            "info": info
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to predict and step: {str(e)}")
-
-# Step endpoint for manual action
-class StepRequest(BaseModel):
-    action: Dict[str, Any]
-
-@app.post("/step")
-def step_manual(request: StepRequest):
-    """Execute a manual step with provided action"""
-    global current_observation
-
-    if not env:
-        raise HTTPException(status_code=500, detail="Environment not initialized")
-
-    if current_observation is None:
-        raise HTTPException(status_code=400, detail="Environment not reset. Call /reset first")
-
-    try:
-        action_dict = request.action
-        machine = action_dict.get("machine", 0)
-        task = action_dict.get("task", 0)
-
-        # Convert to discrete action (same logic as gym_env.py)
-        # Action encoding: 0 = do_nothing, 1-9 = assign task 0-8 to machine 0, etc.
-        if machine == -1 or task == -1:  # do_nothing
-            action_value = 0
-        else:
-            action_value = 1 + machine * 9 + task  # 1-81 for assignments
-
-        # Execute step
-        obs, reward, done, truncated, info = env.step(action_value)
-        current_observation = obs
-
-        return {
-            "action": action_value,
-            "observation": obs.tolist() if hasattr(obs, 'tolist') else obs,
-            "reward": float(reward),
-            "done": bool(done or truncated),
-            "info": info
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to step: {str(e)}")
-
-# Optional auto-run endpoint
-class AutoRunRequest(BaseModel):
-    max_steps: int = 50
 
 @app.post("/auto-run")
-def auto_run(request: AutoRunRequest):
-    """Run multiple steps using model until done or max_steps reached"""
-    global current_observation
-
-    if not model:
+def auto_run(request: AutoRunRequest) -> Dict[str, Any]:
+    if model is None:
         raise HTTPException(status_code=500, detail="Model not loaded")
-
-    if not env:
-        raise HTTPException(status_code=500, detail="Environment not initialized")
-
-    if current_observation is None:
-        raise HTTPException(status_code=400, detail="Environment not reset. Call /reset first")
 
     results = []
     steps_taken = 0
+    done = False
 
     try:
-        while not env.done and steps_taken < request.max_steps:
-            # Get action from model
-            action, _ = model.predict(current_observation, deterministic=True)
-
-            # Action is already discrete
-            action_value = int(action[0]) if isinstance(action, np.ndarray) else int(action)
-
-            # Execute step
-            obs, reward, done, truncated, info = env.step(action_value)
-            current_observation = obs
-
-            results.append({
-                "step": steps_taken + 1,
-                "action": action_value,
-                "observation": obs.tolist() if hasattr(obs, 'tolist') else obs,
-                "reward": float(reward),
-                "done": bool(done or truncated),
-                "info": info
-            })
-
+        _ensure_env()
+        while not done and steps_taken < request.max_steps:
+            result = predict()
+            results.append(result)
+            done = bool(result["done"])
             steps_taken += 1
+        return {"total_steps": steps_taken, "results": results, "final_done": done}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to run auto steps: {exc}") from exc
 
-            if done or truncated:
-                break
 
-        return {
-            "total_steps": steps_taken,
-            "results": results,
-            "final_done": bool(env.done)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to run auto steps: {str(e)}")
-
-def main():
+def main() -> None:
     uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
+
 
 if __name__ == "__main__":
     main()

@@ -34,6 +34,10 @@ export interface State {
   job_queue: Job[];
   energy_budget: number;
   current_energy_usage: number;
+  throughput?: number;
+  delay?: number;
+  queue_length?: number;
+  breakdown_risk?: number;
   time_step: number;
   total_reward: number;
   jobs_completed: number;
@@ -65,6 +69,8 @@ export interface Task {
   id: string;
   name: string;
   description: string;
+  objective?: string;
+  grader: string;
   config: {
     num_machines: number;
     initial_jobs: number;

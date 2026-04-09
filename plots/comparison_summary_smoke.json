@@ -1,0 +1,47 @@
+{
+  "ppo": {
+    "avg_reward": 10.484282821416855,
+    "std_reward": 0.0,
+    "avg_completion_rate": 1.0,
+    "avg_episode_length": 21.0,
+    "avg_throughput": 0.5714285714285714,
+    "avg_energy_usage": 14.497093333333334,
+    "avg_delay": 7.855007558578987,
+    "p95_delay": 19.0,
+    "max_delay": 20.0,
+    "avg_breakdown_risk": 0.26559277380952373,
+    "avg_breakdown_rate": 0.0,
+    "avg_energy_over_budget_rate": 0.0,
+    "avg_action_validity_rate": 1.0
+  },
+  "baseline": {
+    "avg_reward": 8.56743298353906,
+    "std_reward": 0.0,
+    "avg_completion_rate": 1.0,
+    "avg_episode_length": 19.0,
+    "avg_throughput": 0.631578947368421,
+    "avg_energy_usage": 15.799191578947369,
+    "avg_delay": 8.256328320802005,
+    "p95_delay": 16.099999999999998,
+    "max_delay": 17.0,
+    "avg_breakdown_risk": 0.29758999999999997,
+    "avg_breakdown_rate": 0.0,
+    "avg_energy_over_budget_rate": 0.0,
+    "avg_action_validity_rate": 1.0
+  },
+  "random": {
+    "avg_reward": 22.505147360559338,
+    "std_reward": 0.0,
+    "avg_completion_rate": 0.6666666666666666,
+    "avg_episode_length": 60.0,
+    "avg_throughput": 0.13333333333333333,
+    "avg_energy_usage": 4.194107333333333,
+    "avg_delay": 30.5,
+    "p95_delay": 57.05,
+    "max_delay": 60.0,
+    "avg_breakdown_risk": 0.19640162499999975,
+    "avg_breakdown_rate": 0.03333333333333333,
+    "avg_energy_over_budget_rate": 0.0,
+    "avg_action_validity_rate": 0.18333333333333332
+  }
+}
