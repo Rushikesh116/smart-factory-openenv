@@ -2,38 +2,45 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from app.reward import state_to_dict
+import numpy as np
+
+from app.reward import calculate_component_scores
 
 
 def safe_score(value):
-    if value is None or not isinstance(value, (int, float)):
+    try:
+        value = float(value)
+        if not np.isfinite(value):
+            return 0.5
+    except:
         return 0.5
-    return max(0.01, min(0.99, float(value)))
+
+    return max(0.01, min(0.99, value))
 
 
 def energy_efficiency_grader(state: Any) -> float:
-    state_data = state_to_dict(state)
-    energy_usage = float(state_data.get("current_energy_usage", 0.0))
-    energy_budget = max(float(state_data.get("energy_budget", 1.0)), 1.0)
-    score = 1.0 - (energy_usage / max(energy_budget * 1.15, 1.0))
+    components = calculate_component_scores(state)
+    score = components.get("energy_score", 0.5)
     return safe_score(score)
 
 
 def throughput_grader(state: Any) -> float:
-    state_data = state_to_dict(state)
-    jobs_completed = float(state_data.get("jobs_completed", 0.0))
-    queue_length = float(state_data.get("queue_length", len(state_data.get("job_queue", []))))
-    total_jobs = max(jobs_completed + queue_length, 1.0)
-    score = jobs_completed / total_jobs
+    components = calculate_component_scores(state)
+    score = components.get("throughput_score", 0.5)
     return safe_score(score)
 
 
 def delay_grader(state: Any) -> float:
-    state_data = state_to_dict(state)
-    delay = float(state_data.get("delay", state_data.get("avg_waiting_time", 0.0)))
-    max_steps = max(float(state_data.get("max_steps", 1.0)), 1.0)
-    score = 1.0 - (delay / max(max_steps * 0.3, 5.0))
+    components = calculate_component_scores(state)
+    score = components.get("delay_score", 0.5)
     return safe_score(score)
+
+
+GRADER_REGISTRY = {
+    "energy_efficiency": energy_efficiency_grader,
+    "throughput": throughput_grader,
+    "low_latency": delay_grader,
+}
 
 
 TASK_LIST: List[Dict[str, Any]] = [
@@ -58,7 +65,7 @@ TASK_LIST: List[Dict[str, Any]] = [
             "max_steps": 60,
             "seed": 11,
         },
-        "grader": energy_efficiency_grader,
+        "grader": "energy_efficiency",
     },
     {
         "id": "medium",
@@ -81,7 +88,7 @@ TASK_LIST: List[Dict[str, Any]] = [
             "max_steps": 90,
             "seed": 23,
         },
-        "grader": throughput_grader,
+        "grader": "throughput",
     },
     {
         "id": "hard",
@@ -105,7 +112,7 @@ TASK_LIST: List[Dict[str, Any]] = [
             "max_steps": 110,
             "seed": 37,
         },
-        "grader": delay_grader,
+        "grader": "low_latency",
     },
 ]
 
@@ -120,7 +127,13 @@ def get_task(task_id: str) -> Dict[str, Any]:
 
 def grade_task(task_id: str, state: Any) -> float:
     task = get_task(task_id)
-    return task["grader"](state)
+    grader_key = task["canonical_id"]
+    grader_fn = GRADER_REGISTRY.get(grader_key)
+
+    if grader_fn is None:
+        return 0.5
+
+    return grader_fn(state)
 
 
 def serialize_tasks() -> List[Dict[str, Any]]:
@@ -131,7 +144,7 @@ def serialize_tasks() -> List[Dict[str, Any]]:
             "name": task["name"],
             "objective": task["objective"],
             "config": dict(task["config"]),
-            "grader": task["grader"].__name__,
+            "grader": task["grader"],
         }
         for task in TASK_LIST
     ]
