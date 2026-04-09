@@ -182,6 +182,16 @@ def health() -> Dict[str, Any]:
     return {"ok": True, "task_id": current_task_id, "model_loaded": model is not None}
 
 
+
+@app.get("/reset")
+def reset_get() -> Dict[str, Any]:
+    return {"status": "ok", "message": "Use POST /reset to initialize environment"}
+
+@app.get("/step")
+def step_get() -> Dict[str, Any]:
+    return {"status": "ok", "message": "Use POST /step with action payload"}
+
+
 @app.post("/reset")
 def reset(request: Optional[ResetRequest] = None) -> Dict[str, Any]:
     global current_observation
@@ -191,10 +201,8 @@ def reset(request: Optional[ResetRequest] = None) -> Dict[str, Any]:
         obs, info = active_env.reset()
         current_observation = obs
         return {
-            "task_id": current_task_id,
             "observation": obs.tolist() if hasattr(obs, "tolist") else obs,
             "info": info,
-            "state": active_env.sim.get_state(),
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to reset environment: {exc}") from exc
