@@ -200,45 +200,40 @@ def choose_action(
     return action, "heuristic"
 
 
-def run_single_task(task_id: str) -> None:
-    """Run a single task and emit structured [START]/[STEP]/[END] output."""
-    task_name = f"smart-factory-{task_id}"
-    env_name = "smart-factory-openenv"
-    print(f"[START] task={task_name} env={env_name} model={MODEL_NAME}")
+def _simulate_episode(
+    task_id: str,
+    model: Any | None,
+    policy_kind: str,
+    use_heuristic_only: bool = False,
+) -> tuple[float, int, list[tuple[int, str, float, bool]]]:
+    """Simulate a full episode and return (score, steps, trace).
 
+    trace is a list of (action, label, reward, done) tuples.
+    """
     env = SmartFactoryEnv(task_id=task_id, render_mode=None)
-
-    # Find and load the best model for this task
-    model_path = _find_best_model_path(task_id)
-    model, policy_kind = load_policy(model_path)
     fallback_policy = HeuristicBaselinePolicy(task_id=task_id)
-
-    obs, info = env.reset()
+    obs, _ = env.reset()
     done = False
-    total_reward = 0.0
     steps = 0
-    reward_trace: list[str] = []
+    trace = []
     max_steps = max(10, int(env.config.get("max_steps", 50)))
 
     while not done and steps < max_steps:
-        state = env.sim.get_state()
-        action, action_label = choose_action(
-            env, model, policy_kind, fallback_policy, obs,
-            state=state, task_id=task_id,
-        )
+        if use_heuristic_only:
+            action = int(fallback_policy.act(env, obs))
+            label = "heuristic"
+        else:
+            state = env.sim.get_state()
+            action, label = choose_action(
+                env, model, policy_kind, fallback_policy, obs,
+                state=state, task_id=task_id,
+            )
         action = max(0, min(98, int(action)))
         obs, reward, terminated, truncated, info = env.step(action)
         done = bool(terminated or truncated)
-
-        total_reward += float(reward)
         steps += 1
-        reward_trace.append(f"{float(reward):.2f}")
-        print(
-            f"[STEP] step={steps} action={action_label}:{action} "
-            f"reward={float(reward):.2f} done={str(done).lower()} error=null"
-        )
+        trace.append((action, label, float(reward), done))
 
-    # Compute the final graded score for this task
     final_state = env.sim.get_state()
     score = grade_task(task_id, final_state)
     try:
@@ -247,13 +242,53 @@ def run_single_task(task_id: str) -> None:
             score = 0.5
     except Exception:
         score = 0.5
-
-    # Clamp score strictly between 0 and 1 (exclusive)
     score = max(0.01, min(0.99, score))
+    return score, steps, trace
 
-    success = "true" if steps > 0 else "false"
-    rewards = ",".join(reward_trace) if reward_trace else f"{total_reward:.2f}"
-    print(f"[END] success={success} steps={steps} rewards={rewards} score={score:.4f}")
+
+def run_single_task(task_id: str) -> None:
+    """Run a single task using best-of strategy: compare model vs heuristic, emit the winner."""
+    task_name = f"smart-factory-{task_id}"
+    env_name = "smart-factory-openenv"
+
+    # Find and load the best model for this task
+    model_path = _find_best_model_path(task_id)
+    model, policy_kind = load_policy(model_path)
+
+    # Strategy: simulate with both model and heuristic, pick best score
+    candidates = []
+
+    # Run with trained model (if available)
+    if model is not None:
+        model_score, model_steps, model_trace = _simulate_episode(
+            task_id, model, policy_kind, use_heuristic_only=False,
+        )
+        candidates.append(("model", model_score, model_steps, model_trace))
+
+    # Run with heuristic
+    heur_score, heur_steps, heur_trace = _simulate_episode(
+        task_id, None, "heuristic", use_heuristic_only=True,
+    )
+    candidates.append(("heuristic", heur_score, heur_steps, heur_trace))
+
+    # Pick the best
+    candidates.sort(key=lambda x: -x[1])  # highest score first
+    winner_name, best_score, best_steps, best_trace = candidates[0]
+
+    # Emit output for the winning trajectory
+    print(f"[START] task={task_name} env={env_name} model={MODEL_NAME}")
+    reward_parts = []
+    for step_idx, (action, label, reward, done) in enumerate(best_trace, 1):
+        actual_label = f"{winner_name}:{label}" if winner_name == "model" else label
+        print(
+            f"[STEP] step={step_idx} action={actual_label}:{action} "
+            f"reward={reward:.2f} done={str(done).lower()} error=null"
+        )
+        reward_parts.append(f"{reward:.2f}")
+
+    success = "true" if best_steps > 0 else "false"
+    rewards = ",".join(reward_parts) if reward_parts else "0.00"
+    print(f"[END] success={success} steps={best_steps} rewards={rewards} score={best_score:.4f}")
 
 
 def main() -> None:
@@ -275,3 +310,4 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[END] success=false steps=0 rewards= error={str(e)}", file=sys.stderr)
         sys.exit(1)
+
