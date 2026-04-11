@@ -1,3 +1,18 @@
+---
+title: Smart Factory OpenEnv
+emoji: 🏭
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+tags:
+  - reinforcement-learning
+  - smart-factory
+  - openenv
+  - ppo
+---
+
 # 🏭 AI-Powered Smart Factory Optimization (OpenEnv)
 
 🚀 **Live Demo:** https://huggingface.co/spaces/rushikesh116/smart-factory-openenv
