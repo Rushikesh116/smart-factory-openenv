@@ -72,8 +72,20 @@ grading_criteria:
 
 tasks:
   - id: easy
+    name: Energy Efficiency
     description: Optimize energy efficiency in a small factory
+    objective: energy_efficiency
+    grader: energy_efficiency
+    score_range: [0.01, 0.99]
   - id: medium
+    name: Throughput Optimization
     description: Maximize throughput under moderate load
+    objective: throughput
+    grader: throughput
+    score_range: [0.01, 0.99]
   - id: hard
+    name: Low Latency Scheduling
     description: Minimize delay in high-load failure-prone environment
+    objective: low_latency
+    grader: low_latency
+    score_range: [0.01, 0.99]
