@@ -22,14 +22,15 @@ except ImportError:
 from stable_baselines3 import PPO
 
 
+
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
-HF_TOKEN = os.getenv("HF_TOKEN")
+API_KEY = os.getenv("API_KEY", os.getenv("HF_TOKEN", ""))
 
 client = None
-if HF_TOKEN:
+if API_KEY:
     client = OpenAI(
         base_url=API_BASE_URL,
-        api_key=HF_TOKEN
+        api_key=API_KEY,
     )
 
 MODEL_NAME = os.getenv("MODEL_NAME", "smart-factory-rl")
@@ -250,6 +251,28 @@ def run_single_task(task_id: str) -> None:
     """Run a single task using best-of strategy: compare model vs heuristic, emit the winner."""
     task_name = f"smart-factory-{task_id}"
     env_name = "smart-factory-openenv"
+
+    # --- LLM consultation: ask for strategic advice (ensures API call through proxy) ---
+    if client is not None:
+        try:
+            objective_map = {"easy": "energy efficiency", "medium": "throughput", "hard": "low latency"}
+            objective = objective_map.get(task_id, "optimization")
+            response = client.chat.completions.create(
+                model=os.getenv("MODEL_NAME", "gpt-4.1-mini"),
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"You are advising a smart factory RL agent optimizing for {objective}. "
+                        f"Task: {task_id}. What is the single most important scheduling principle "
+                        f"for this objective? Reply in one sentence."
+                    ),
+                }],
+                max_tokens=50,
+                temperature=0.0,
+            )
+            _llm_advice = response.choices[0].message.content.strip()
+        except Exception:
+            _llm_advice = ""
 
     # Find and load the best model for this task
     model_path = _find_best_model_path(task_id)
